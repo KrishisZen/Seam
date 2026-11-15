@@ -4,6 +4,7 @@ from itertools import combinations
 import colorsys
 from PIL import ImageColor
 from config import SCORING_WEIGHTS
+from services.style_profile import parse_style_tags
 
 WEIGHTS = SCORING_WEIGHTS
 CORE = {"Tops", "Bottoms", "Footwear"}
@@ -81,7 +82,7 @@ def score_outfit(garments, weights=None):
         # Moderate separation is useful; very similar or very distant combinations score lower.
         mean = sum(distances) / len(distances)
         color_score = 100 * max(0, 1 - abs(mean - .34) / .66)
-    tags = [set(t.strip().lower() for t in (g.get("style_tags") or "").split(",") if t.strip()) for g in garments]
+    tags = [set(tag.casefold() for tag in parse_style_tags(g.get("style_tags") or "")) for g in garments]
     nonempty = [t for t in tags if t]
     if len(nonempty) < 2:
         style_score = 58.0 if nonempty else 50.0

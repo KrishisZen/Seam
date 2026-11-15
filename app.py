@@ -1,15 +1,17 @@
 """SEAM: Computational Wardrobe & Personal Style Intelligence."""
 from pathlib import Path
+from io import BytesIO
 import json
 import uuid
 from flask import Flask, abort, flash, redirect, render_template, request, url_for
+from PIL import Image
 from werkzeug.utils import secure_filename
-from config import ALLOWED_EXTENSIONS, MAX_CONTENT_LENGTH, SECRET_KEY, UPLOAD_FOLDER
+from config import ALLOWED_EXTENSIONS, MAX_CONTENT_LENGTH, SECRET_KEY, STYLE_TAGS, STYLE_TAG_GROUPS, UPLOAD_FOLDER
 from database import get_db, init_db, row, rows
 from services.color_analysis import analyze_image
 from services.outfit_recommendation import recommend
 from services.outfit_scoring import improvement_suggestions, score_outfit
-from services.style_profile import summarize
+from services.style_profile import parse_style_tags, summarize
 
 app = Flask(__name__)
 app.config.update(SECRET_KEY=SECRET_KEY, MAX_CONTENT_LENGTH=MAX_CONTENT_LENGTH)
@@ -32,8 +34,6 @@ def missing_analysis_details(garment):
         missing.append("shoe style")
     if not garment.get("color"):
         missing.append("color information")
-    if not garment.get("style_tags"):
-        missing.append("style tags")
     return missing
 
 
@@ -95,6 +95,28 @@ def save_image(file, garment_box="", keep_unanalyzed=False):
     return f"uploads/{filename}", analysis, cutout_path, issue
 
 
+def save_fit_pic(file):
+    """Save an optional outfit photo without treating it as a garment analysis image."""
+    if not file or not file.filename:
+        return ""
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in ALLOWED_EXTENSIONS:
+        raise ValueError("Use a PNG, JPG, JPEG, or WEBP fit pic.")
+    data = file.read()
+    if not data:
+        raise ValueError("The selected fit pic is empty.")
+    if len(data) > 8 * 1024 * 1024:
+        raise ValueError("The fit pic must be 8 MB or smaller.")
+    try:
+        with Image.open(BytesIO(data)) as image:
+            image.verify()
+    except (OSError, ValueError) as exc:
+        raise ValueError("SEAM couldn't read that fit pic. Try a PNG, JPG, JPEG, or WEBP image.") from exc
+    filename = secure_filename(f"{uuid.uuid4().hex}.{ext}")
+    (Path(UPLOAD_FOLDER) / filename).write_bytes(data)
+    return f"uploads/{filename}"
+
+
 def insert_garment(name, category, image_path, analysis=None, cutout_path=""):
     analysis = analysis or {}
     with get_db() as db:
@@ -107,7 +129,10 @@ def insert_garment(name, category, image_path, analysis=None, cutout_path=""):
 @app.errorhandler(413)
 def too_large(_error):
     flash("Choose smaller images. Each photo can be up to 8 MB, and a batch can contain up to 25 photos.", "error")
-    return redirect(url_for("garment_bulk" if request.path.endswith("/bulk") else "garment_new"))
+    if request.path.startswith("/outfits/") and request.path != "/outfits/new":
+        return redirect(url_for("outfit_edit", outfit_id=request.view_args["outfit_id"]))
+    endpoint = "outfit_new" if request.path == "/outfits/new" else ("garment_bulk" if request.path.endswith("/bulk") else "garment_new")
+    return redirect(url_for(endpoint))
 
 
 @app.route("/")
@@ -141,7 +166,7 @@ def wardrobe():
     return render_template("wardrobe.html", garments=garments, categories=CATEGORIES, selected=category)
 
 
-def garment_form(garment=None):
+def garment_form(garment=None, selected_style_tags=None):
     if garment and garment.get("palette"):
         try:
             garment["palette"] = json.loads(garment["palette"])
@@ -152,9 +177,22 @@ def garment_form(garment=None):
             garment["analysis"] = json.loads(garment["analysis_json"])
         except (TypeError, json.JSONDecodeError):
             garment["analysis"] = {}
+    if selected_style_tags is None:
+        selected_style_tags = garment.get("style_tags", "") if garment else ""
     return render_template("garment_form.html", garment=garment, categories=CATEGORIES,
                            apparel_categories=APPAREL_CATEGORIES, fit_options=FIT_OPTIONS,
-                           shoe_styles=SHOE_STYLES, accessory_types=ACCESSORY_TYPES)
+                           shoe_styles=SHOE_STYLES, accessory_types=ACCESSORY_TYPES,
+                           style_tag_groups=STYLE_TAG_GROUPS, selected_style_tags=parse_style_tags(selected_style_tags))
+
+
+def selected_tags_from_form():
+    submitted = request.form.getlist("style_tags")
+    selected = parse_style_tags(submitted)
+    if len(selected) != len(set(value.strip().casefold() for value in submitted)):
+        raise ValueError("Choose style tags from SEAM's list only.")
+    if len(selected) > 5:
+        raise ValueError("Choose up to five style tags. You can also leave them empty.")
+    return ",".join(selected)
 
 
 @app.route("/garments/new", methods=["GET", "POST"])
@@ -171,6 +209,7 @@ def garment_new():
         accessory_type = request.form.get("accessory_type", "").strip() if category == "Accessories" else ""
         if fit and fit not in FIT_OPTIONS or shoe_style and shoe_style not in SHOE_STYLES or accessory_type and accessory_type not in ACCESSORY_TYPES:
             raise ValueError("Choose a valid category-specific option.")
+        style_tags = selected_tags_from_form()
         path, analysis, cutout_path, _issue = save_image(request.files.get("image"), request.form.get("garment_box", ""))
         color = request.form.get("color", "").strip()[:50]
         if not color and analysis:
@@ -178,7 +217,7 @@ def garment_new():
         with get_db() as db:
             db.execute("""INSERT INTO garments(name,category,color,material,fit,style_tags,image_path,description,palette,brightness,saturation,cutout_path,analysis_json,shoe_style,accessory_type)
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (name, category, color, request.form.get("material", "").strip()[:60],
-                fit, request.form.get("style_tags", "").strip()[:250], path,
+                fit, style_tags, path,
                 request.form.get("description", "").strip()[:500], json.dumps(analysis["palette"]) if analysis else "",
                 analysis["brightness"] if analysis else None, analysis["saturation"] if analysis else None,
                 cutout_path, json.dumps(analysis) if analysis else "{}", shoe_style, accessory_type))
@@ -186,7 +225,7 @@ def garment_new():
         return redirect(url_for("wardrobe"))
     except (ValueError, OSError) as exc:
         flash(str(exc), "error")
-        return garment_form()
+        return garment_form(selected_style_tags=request.form.getlist("style_tags"))
 
 
 @app.route("/garments/bulk", methods=["GET", "POST"])
@@ -243,6 +282,7 @@ def garment_edit(garment_id):
         accessory_type = request.form.get("accessory_type", "").strip() if category == "Accessories" else ""
         if fit and fit not in FIT_OPTIONS or shoe_style and shoe_style not in SHOE_STYLES or accessory_type and accessory_type not in ACCESSORY_TYPES:
             raise ValueError("Choose a valid category-specific option.")
+        style_tags = selected_tags_from_form()
         path, analysis, cutout_path, _issue = save_image(request.files.get("image"), request.form.get("garment_box", ""))
         color = request.form.get("color", "").strip()[:50] or (analysis["palette"][0] if analysis else garment["color"])
         with get_db() as db:
@@ -251,14 +291,14 @@ def garment_edit(garment_id):
                 cutout_path=CASE WHEN ? != '' THEN ? ELSE cutout_path END, analysis_json=CASE WHEN ? != '{}' THEN ? ELSE analysis_json END,
                 shoe_style=?,accessory_type=? WHERE id=?""",
                 (name, category, color, request.form.get("material", "").strip()[:60], fit,
-                 request.form.get("style_tags", "").strip()[:250], path or garment["image_path"], request.form.get("description", "").strip()[:500],
+                 style_tags, path or garment["image_path"], request.form.get("description", "").strip()[:500],
                  json.dumps(analysis["palette"]) if analysis else "", json.dumps(analysis["palette"]) if analysis else "",
                  analysis["brightness"] if analysis else None, analysis["saturation"] if analysis else None,
                  cutout_path, cutout_path, json.dumps(analysis) if analysis else "{}", json.dumps(analysis) if analysis else "{}",
                  shoe_style, accessory_type, garment_id))
         flash("Garment updated.", "success"); return redirect(url_for("wardrobe"))
     except (ValueError, OSError) as exc:
-        flash(str(exc), "error"); return garment_form(garment)
+        flash(str(exc), "error"); return garment_form(garment, request.form.getlist("style_tags"))
 
 
 @app.post("/garments/<int:garment_id>/delete")
@@ -304,8 +344,16 @@ def garments_bulk_delete():
     return redirect(url_for("wardrobe"))
 
 
-@app.route("/outfits", methods=["GET", "POST"])
+@app.get("/outfits")
 def outfits():
+    saved = rows("""SELECT o.*, COUNT(og.garment_id) AS garment_count FROM outfits o
+        LEFT JOIN outfit_garments og ON og.outfit_id=o.id GROUP BY o.id ORDER BY o.created_at DESC""")
+    return render_template("outfits.html", outfits=saved)
+
+
+@app.route("/outfits/new", methods=["GET", "POST"])
+def outfit_new():
+    garments = rows("SELECT * FROM garments ORDER BY category,name")
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         ids = list(dict.fromkeys(request.form.getlist("garment_ids", type=int)))
@@ -313,25 +361,26 @@ def outfits():
         if not name or len(name) > 100 or not valid:
             flash("Give the outfit a name and select at least one garment.", "error")
         else:
+            try:
+                fit_pic_path = save_fit_pic(request.files.get("fit_pic"))
+            except (ValueError, OSError) as exc:
+                flash(str(exc), "error")
+                return render_template("outfit_new.html", garments=garments)
+            scores = score_outfit([dict(g) for g in valid])
             with get_db() as db:
-                cursor = db.execute("INSERT INTO outfits(name,description) VALUES(?,?)", (name, request.form.get("description", "").strip()[:500]))
+                cursor = db.execute("INSERT INTO outfits(name,description,fit_pic_path) VALUES(?,?,?)",
+                                    (name, request.form.get("description", "").strip()[:500], fit_pic_path))
                 outfit_id = cursor.lastrowid
                 db.executemany("INSERT INTO outfit_garments(outfit_id,garment_id) VALUES(?,?)", [(outfit_id, g["id"]) for g in valid])
-                scores = score_outfit([dict(g) for g in valid])
                 db.execute("INSERT INTO outfit_scores(outfit_id,color_score,style_score,silhouette_score,completeness_score,balance_score,overall_score) VALUES(?,?,?,?,?,?,?)",
                            (outfit_id, scores["color"], scores["style"], scores["silhouette"], scores["completeness"], scores["balance"], scores["overall"]))
             return redirect(url_for("outfit_detail", outfit_id=outfit_id))
-    garments = rows("SELECT * FROM garments ORDER BY category,name")
-    saved = rows("SELECT o.*, COUNT(og.garment_id) AS garment_count FROM outfits o LEFT JOIN outfit_garments og ON og.outfit_id=o.id GROUP BY o.id ORDER BY o.created_at DESC")
-    return render_template("outfits.html", garments=garments, outfits=saved)
+    return render_template("outfit_new.html", garments=garments)
 
 
 @app.context_processor
 def template_helpers():
-    def outfit_preview(outfit_id):
-        return rows("""SELECT g.* FROM garments g JOIN outfit_garments og ON og.garment_id=g.id
-            WHERE og.outfit_id=? ORDER BY g.category LIMIT 4""", (outfit_id,))
-    return {"outfit_preview": outfit_preview}
+    return {}
 
 
 @app.route("/outfits/<int:outfit_id>")
@@ -352,13 +401,27 @@ def outfit_edit(outfit_id):
         if not name or len(name) > 100 or not selected:
             flash("Give the outfit a name and select at least one garment.", "error")
         else:
+            try:
+                uploaded_fit_pic = save_fit_pic(request.files.get("fit_pic"))
+            except (ValueError, OSError) as exc:
+                flash(str(exc), "error")
+                return render_template("outfit_edit.html", outfit=outfit, garments=garments,
+                                       selected_ids={g["id"] for g in outfit["garments"]})
+            old_fit_pic = outfit.get("fit_pic_path", "")
+            if request.form.get("remove_fit_pic"):
+                fit_pic_path = ""
+            else:
+                fit_pic_path = uploaded_fit_pic or old_fit_pic
             scores = score_outfit([dict(g) for g in selected])
             with get_db() as db:
-                db.execute("UPDATE outfits SET name=?,description=? WHERE id=?", (name, request.form.get("description", "").strip()[:500], outfit_id))
+                db.execute("UPDATE outfits SET name=?,description=?,fit_pic_path=? WHERE id=?",
+                           (name, request.form.get("description", "").strip()[:500], fit_pic_path, outfit_id))
                 db.execute("DELETE FROM outfit_garments WHERE outfit_id=?", (outfit_id,))
                 db.executemany("INSERT INTO outfit_garments(outfit_id,garment_id) VALUES(?,?)", [(outfit_id, g["id"]) for g in selected])
                 db.execute("INSERT INTO outfit_scores(outfit_id,color_score,style_score,silhouette_score,completeness_score,balance_score,overall_score) VALUES(?,?,?,?,?,?,?)",
                            (outfit_id, scores["color"], scores["style"], scores["silhouette"], scores["completeness"], scores["balance"], scores["overall"]))
+            if old_fit_pic and old_fit_pic != fit_pic_path:
+                (Path(app.static_folder) / old_fit_pic).unlink(missing_ok=True)
             flash("Outfit updated and rescored.", "success")
             return redirect(url_for("outfit_detail", outfit_id=outfit_id))
     return render_template("outfit_edit.html", outfit=outfit, garments=garments,
@@ -386,8 +449,10 @@ def outfit_replace(outfit_id):
 
 @app.post("/outfits/<int:outfit_id>/delete")
 def outfit_delete(outfit_id):
-    get_outfit(outfit_id)
+    outfit = get_outfit(outfit_id)
     with get_db() as db: db.execute("DELETE FROM outfits WHERE id=?", (outfit_id,))
+    if outfit.get("fit_pic_path"):
+        (Path(app.static_folder) / outfit["fit_pic_path"]).unlink(missing_ok=True)
     flash("Outfit deleted.", "success"); return redirect(url_for("outfits"))
 
 

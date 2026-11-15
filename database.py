@@ -43,6 +43,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL CHECK(length(trim(name)) > 0),
             description TEXT NOT NULL DEFAULT '',
+            fit_pic_path TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS outfit_garments (
@@ -70,6 +71,9 @@ def init_db():
             db.execute("ALTER TABLE garments ADD COLUMN shoe_style TEXT NOT NULL DEFAULT ''")
         if "accessory_type" not in garment_columns:
             db.execute("ALTER TABLE garments ADD COLUMN accessory_type TEXT NOT NULL DEFAULT ''")
+        outfit_columns = {column[1] for column in db.execute("PRAGMA table_info(outfits)")}
+        if "fit_pic_path" not in outfit_columns:
+            db.execute("ALTER TABLE outfits ADD COLUMN fit_pic_path TEXT NOT NULL DEFAULT ''")
 
 
 def rows(query, params=()):

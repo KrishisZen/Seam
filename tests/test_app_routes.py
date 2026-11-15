@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw
 
 import database
 import app as seam_app
+from config import STYLE_TAGS
 
 
 class AppRouteTests(unittest.TestCase):
@@ -93,6 +94,27 @@ class AppRouteTests(unittest.TestCase):
         accessory_missing = seam_app.missing_analysis_details(dict(bag))
         self.assertNotIn("fit / silhouette", accessory_missing)
         self.assertNotIn("accessory type", accessory_missing)
+        self.assertNotIn("style tags", accessory_missing)
+
+    def test_style_tags_are_curated_and_limited_to_five_without_a_minimum(self):
+        self.assertGreaterEqual(len(STYLE_TAGS), 20)
+        self.assertLessEqual(len(STYLE_TAGS), 30)
+        no_tags = self.client.post("/garments/new", data={"name": "Plain shirt", "category": "Tops"})
+        self.assertEqual(no_tags.status_code, 302)
+        self.assertEqual(database.row("SELECT style_tags FROM garments WHERE name='Plain shirt'")["style_tags"], "")
+
+        chosen = STYLE_TAGS[:5]
+        five_tags = self.client.post("/garments/new", data={"name": "Tagged shirt", "category": "Tops", "style_tags": chosen})
+        self.assertEqual(five_tags.status_code, 302)
+        self.assertEqual(database.row("SELECT style_tags FROM garments WHERE name='Tagged shirt'")["style_tags"], ",".join(chosen))
+
+        too_many = self.client.post("/garments/new", data={"name": "Too many", "category": "Tops", "style_tags": STYLE_TAGS[:6]})
+        self.assertEqual(too_many.status_code, 200)
+        self.assertIsNone(database.row("SELECT id FROM garments WHERE name='Too many'"))
+
+        arbitrary = self.client.post("/garments/new", data={"name": "Custom tag", "category": "Tops", "style_tags": "My made up style"})
+        self.assertEqual(arbitrary.status_code, 200)
+        self.assertIsNone(database.row("SELECT id FROM garments WHERE name='Custom tag'"))
 
     def test_quick_rename_and_bulk_delete(self):
         for name in ("Garment 1", "Garment 2", "Garment 3"):
@@ -101,14 +123,14 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(wardrobe_response.status_code, 200)
         wardrobe_html = wardrobe_response.get_data(as_text=True)
         self.assertIn('role="tooltip"', wardrobe_html)
-        self.assertIn("Style tags <em>optional</em>", wardrobe_html)
-        self.assertLess(wardrobe_html.index("<b>Silhouette</b>"), wardrobe_html.index("<b>Style tags"))
+        self.assertNotIn("Style tags", wardrobe_html)
+        self.assertIn("<b>Silhouette</b>", wardrobe_html)
         response = self.client.post("/garments/1/rename", data={"name": "Black jeans", "category": "Bottoms"})
         self.assertEqual(response.status_code, 302)
         self.assertEqual(database.row("SELECT name FROM garments WHERE id=1")["name"], "Black jeans")
         response = self.client.post("/garments/1/edit", data={"name": "Black jeans", "category": "Bottoms", "fit": "Regular", "color": "#222222"})
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(seam_app.missing_analysis_details(dict(database.row("SELECT * FROM garments WHERE id=1"))), ["style tags"])
+        self.assertEqual(seam_app.missing_analysis_details(dict(database.row("SELECT * FROM garments WHERE id=1"))), [])
         response = self.client.post("/garments/bulk-delete", data={"garment_ids": ["1", "2"]})
         self.assertEqual(response.status_code, 302)
         remaining = database.rows("SELECT name FROM garments ORDER BY id")
@@ -125,17 +147,36 @@ class AppRouteTests(unittest.TestCase):
             self.assertEqual(response.status_code, 302)
         self.client.post("/garments/new", data={"name": "Dark tee", "category": "Tops",
                                                 "color": "#222222", "style_tags": "Minimal", "fit": "Regular"})
-        response = self.client.post("/outfits", data={"name": "Weekend", "garment_ids": ["1", "2", "3"]})
+        response = self.client.post("/outfits/new", data={"name": "Weekend", "garment_ids": ["1", "2", "3"],
+                                                           "fit_pic": (self.sample_photo("#c83228"), "weekend.png")},
+                                   content_type="multipart/form-data")
         self.assertEqual(response.status_code, 302)
+        outfit = database.row("SELECT * FROM outfits WHERE id=1")
+        self.assertTrue(outfit["fit_pic_path"])
+        studio_html = self.client.get("/outfits").get_data(as_text=True)
+        self.assertIn("Create new outfit", studio_html)
+        self.assertIn(outfit["fit_pic_path"], studio_html)
+        self.assertNotIn("Choose pieces", studio_html)
+        self.assertIn("Choose pieces", self.client.get("/outfits/new").get_data(as_text=True))
+        self.client.post("/outfits/new", data={"name": "No photo", "garment_ids": ["1"]})
+        no_photo_html = self.client.get("/outfits").get_data(as_text=True)
+        self.assertIn("No fit pic, boohoo.", no_photo_html)
+        self.assertIn("☹", no_photo_html)
         self.assertEqual(self.client.get("/outfits/1").status_code, 200)
+        self.assertIn(outfit["fit_pic_path"], self.client.get("/outfits/1").get_data(as_text=True))
+        edit_html = self.client.get("/outfits/1/edit").get_data(as_text=True)
         self.assertEqual(self.client.get("/outfits/1/edit").status_code, 200)
-        self.assertEqual(self.client.get("/outfits").status_code, 200)
+        self.assertIn("Remove current fit pic", edit_html)
         self.assertEqual(self.client.get("/recommendations").status_code, 200)
         self.assertEqual(self.client.get("/style-profile").status_code, 200)
         response = self.client.post("/outfits/1/edit", data={"name": "Weekend revised", "garment_ids": ["1", "2", "3"]})
         self.assertEqual(response.status_code, 302)
         response = self.client.post("/outfits/1/replace", data={"remove_id": "1", "add_id": "4"})
         self.assertEqual(response.status_code, 302)
+        response = self.client.post("/outfits/1/edit", data={"name": "Weekend revised", "garment_ids": ["1", "2", "3"],
+                                                               "remove_fit_pic": "1"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(database.row("SELECT fit_pic_path FROM outfits WHERE id=1")["fit_pic_path"], "")
         self.assertEqual(self.client.get("/").status_code, 200)
 
 

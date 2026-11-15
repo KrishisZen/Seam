@@ -156,6 +156,23 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => { toast.hidden = true; }, 250);
   });
 
+  const styleTagInputs = Array.from(document.querySelectorAll('[data-style-tag]'));
+  const styleTagCounter = document.querySelector('[data-style-tags-counter]');
+  const updateStyleTagCounter = () => {
+    const count = styleTagInputs.filter((field) => field.checked).length;
+    if (styleTagCounter) styleTagCounter.textContent = `${count} / 5 selected`;
+  };
+  styleTagInputs.forEach((field) => {
+    field.addEventListener('change', () => {
+      if (field.checked && styleTagInputs.filter((input) => input.checked).length > 5) {
+        field.checked = false;
+        showToast('Choose up to five style tags. You can also leave them empty.');
+      }
+      updateStyleTagCounter();
+    });
+  });
+  updateStyleTagCounter();
+
   const tooltipButtons = Array.from(document.querySelectorAll('[data-tooltip-trigger]'));
   const closeTooltips = (except = null) => {
     tooltipButtons.forEach((button) => {

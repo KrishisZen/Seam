@@ -14,3 +14,11 @@ SCORING_WEIGHTS = {
     "completeness": 0.15,
     "balance": 0.10,
 }
+
+STYLE_TAG_GROUPS = {
+    "Everyday": ["Casual", "Classic", "Minimal", "Smart Casual", "Normcore", "Coastal"],
+    "Tailored & Heritage": ["Business Casual", "Formal", "Preppy", "Workwear", "Vintage", "Western"],
+    "Street & Sport": ["Streetwear", "Athleisure", "Sporty", "Utility", "Outdoor", "Grunge"],
+    "Expressive": ["Bohemian", "Romantic", "Edgy", "Avant-garde", "Y2K", "Artisanal"],
+}
+STYLE_TAGS = [tag for group in STYLE_TAG_GROUPS.values() for tag in group]
