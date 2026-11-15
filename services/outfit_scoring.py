@@ -2,8 +2,8 @@
 from collections import Counter
 from itertools import combinations
 import colorsys
-from PIL import ImageColor
 from config import OVERALL_SCORE_CURVE, SCORING_WEIGHTS
+from services.color_names import color_rgb
 from services.style_profile import parse_style_tags
 
 WEIGHTS = SCORING_WEIGHTS
@@ -30,11 +30,7 @@ SHOE_STYLE_MISMATCH = {
 
 
 def _hex(value):
-    value = (value or "").strip().lstrip("#")
-    try:
-        return ImageColor.getrgb("#" + value if len(value) == 6 else value)[:3]
-    except (ValueError, TypeError):
-        return None
+    return color_rgb(value)
 
 
 def _shoe_pairing_score(garments, tags):

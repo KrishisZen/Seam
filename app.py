@@ -9,7 +9,7 @@ from werkzeug.utils import secure_filename
 from config import ALLOWED_EXTENSIONS, MAX_CONTENT_LENGTH, SECRET_KEY, STYLE_TAGS, STYLE_TAG_GROUPS, UPLOAD_FOLDER
 from database import get_db, init_db, row, rows
 from services.color_analysis import analyze_image
-from services.color_names import color_name
+from services.color_names import color_name, color_rgb
 from services.outfit_recommendation import recommend
 from services.outfit_scoring import improvement_suggestions, score_outfit
 from services.style_profile import parse_style_tags, summarize
@@ -220,7 +220,11 @@ def garment_new():
             raise ValueError("Choose a valid category-specific option.")
         style_tags = selected_tags_from_form()
         path, analysis, cutout_path, _issue = save_image(request.files.get("image"), request.form.get("garment_box", ""))
+        color_label = request.form.get("color_name", "").strip()[:50]
         color = request.form.get("color", "").strip()[:50]
+        if color_label:
+            parsed_color = color_rgb(color_label)
+            color = "#%02x%02x%02x" % parsed_color if parsed_color else color_label
         if not color and analysis:
             color = analysis["palette"][0]
         with get_db() as db:
@@ -293,7 +297,18 @@ def garment_edit(garment_id):
             raise ValueError("Choose a valid category-specific option.")
         style_tags = selected_tags_from_form()
         path, analysis, cutout_path, _issue = save_image(request.files.get("image"), request.form.get("garment_box", ""))
-        color = request.form.get("color", "").strip()[:50] or (analysis["palette"][0] if analysis else garment["color"])
+        color_label = request.form.get("color_name")
+        if color_label is None:
+            color = request.form.get("color", "").strip()[:50] or (analysis["palette"][0] if analysis else garment["color"])
+        else:
+            color_label = color_label.strip()[:50]
+            if not color_label:
+                color = analysis["palette"][0] if analysis else garment["color"]
+            elif color_label.casefold() == color_name(garment["color"]).casefold():
+                color = garment["color"]
+            else:
+                parsed_color = color_rgb(color_label)
+                color = "#%02x%02x%02x" % parsed_color if parsed_color else color_label
         with get_db() as db:
             db.execute("""UPDATE garments SET name=?,category=?,color=?,material=?,fit=?,style_tags=?,image_path=?,description=?,
                 palette=CASE WHEN ? != '' THEN ? ELSE palette END, brightness=COALESCE(?,brightness), saturation=COALESCE(?,saturation),
@@ -389,7 +404,7 @@ def outfit_new():
 
 @app.context_processor
 def template_helpers():
-    return {}
+    return {"color_name": color_name}
 
 
 @app.route("/outfits/<int:outfit_id>")

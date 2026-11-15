@@ -128,8 +128,12 @@ class AppRouteTests(unittest.TestCase):
         response = self.client.post("/garments/1/rename", data={"name": "Black jeans", "category": "Bottoms"})
         self.assertEqual(response.status_code, 302)
         self.assertEqual(database.row("SELECT name FROM garments WHERE id=1")["name"], "Black jeans")
-        response = self.client.post("/garments/1/edit", data={"name": "Black jeans", "category": "Bottoms", "fit": "Regular", "color": "#222222"})
+        edit_form = self.client.get("/garments/1/edit").get_data(as_text=True)
+        self.assertIn('name="color_name" value="Charcoal"', edit_form)
+        self.assertNotIn('name="color_name" value="#222222"', edit_form)
+        response = self.client.post("/garments/1/edit", data={"name": "Black jeans", "category": "Bottoms", "fit": "Regular", "color_name": "Charcoal"})
         self.assertEqual(response.status_code, 302)
+        self.assertEqual(database.row("SELECT color FROM garments WHERE id=1")["color"], "#222222")
         self.assertEqual(seam_app.missing_analysis_details(dict(database.row("SELECT * FROM garments WHERE id=1"))), ["style tags"])
         response = self.client.post("/garments/bulk-delete", data={"garment_ids": ["1", "2"]})
         self.assertEqual(response.status_code, 302)
@@ -148,9 +152,12 @@ class AppRouteTests(unittest.TestCase):
         self.assertIn('value="latest" selected', latest)
 
     def test_dashboard_color_notes_use_readable_names(self):
-        self.client.post("/garments/new", data={"name": "Teal shirt", "category": "Tops", "color": "#008080"})
+        self.client.post("/garments/new", data={"name": "Teal shirt", "category": "Tops", "color_name": "Teal"})
+        self.assertEqual(database.row("SELECT color FROM garments WHERE name='Teal shirt'")["color"], "#008080")
         dashboard = self.client.get("/").get_data(as_text=True)
         self.assertIn(">Teal <b>1</b></span>", dashboard)
+        self.assertIn(">Teal</span></div></article>", dashboard)
+        self.assertNotIn("#008080</", dashboard)
 
     def test_garment_outfit_recommendation_and_edit_pages(self):
         self.assertEqual(self.client.get("/garments/bulk").status_code, 200)
