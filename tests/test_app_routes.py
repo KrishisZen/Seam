@@ -180,6 +180,7 @@ class AppRouteTests(unittest.TestCase):
         studio_html = self.client.get("/outfits").get_data(as_text=True)
         self.assertIn("Create new outfit", studio_html)
         self.assertIn(outfit["fit_pic_path"], studio_html)
+        self.assertIn('class="button outline outfit-open-button"', studio_html)
         self.assertNotIn("Choose pieces", studio_html)
         self.assertIn("Choose pieces", self.client.get("/outfits/new").get_data(as_text=True))
         self.client.post("/outfits/new", data={"name": "No photo", "garment_ids": ["1"]})
@@ -187,7 +188,9 @@ class AppRouteTests(unittest.TestCase):
         self.assertIn("No fit pic, boohoo.", no_photo_html)
         self.assertIn("☹", no_photo_html)
         self.assertEqual(self.client.get("/outfits/1").status_code, 200)
-        self.assertIn(outfit["fit_pic_path"], self.client.get("/outfits/1").get_data(as_text=True))
+        detail_html = self.client.get("/outfits/1").get_data(as_text=True)
+        self.assertIn(outfit["fit_pic_path"], detail_html)
+        self.assertIn('class="detail-fit-pic"', detail_html)
         edit_html = self.client.get("/outfits/1/edit").get_data(as_text=True)
         self.assertEqual(self.client.get("/outfits/1/edit").status_code, 200)
         self.assertIn("Remove current fit pic", edit_html)
@@ -226,8 +229,10 @@ class AppRouteTests(unittest.TestCase):
         saved = database.row("SELECT * FROM outfits WHERE id=1")
         self.assertEqual(saved["name"], "Recommended look 1")
         detail = self.client.get("/outfits/1").get_data(as_text=True)
-        self.assertIn("No fit pic, boohoo.", detail)
-        self.assertIn('class="panel outfit-fit-pic"', detail)
+        self.assertIn("A fit pic would be nice.", detail)
+        self.assertIn('class="fit-pic-note"', detail)
+        self.assertNotIn("No fit pic, boohoo.", detail)
+        self.assertNotIn('class="outfit-fit-pic"', detail)
 
 
 if __name__ == "__main__":
