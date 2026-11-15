@@ -107,6 +107,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  const categorySelect = document.querySelector('select[name="category"]');
+  const categoryOptions = document.querySelectorAll('[data-category-option]');
+  if (categorySelect && categoryOptions.length) {
+    const updateCategoryFields = () => {
+      const category = categorySelect.value;
+      const type = ['Tops', 'Bottoms', 'Outerwear'].includes(category) ? 'apparel'
+        : category === 'Footwear' ? 'footwear'
+        : category === 'Accessories' ? 'accessories' : '';
+      categoryOptions.forEach((option) => {
+        const visible = option.dataset.categoryOption === type;
+        option.hidden = !visible;
+        option.querySelector('[data-category-control]')?.toggleAttribute('disabled', !visible);
+      });
+    };
+    categorySelect.addEventListener('change', updateCategoryFields);
+    updateCategoryFields();
+  }
+
   document.querySelectorAll('input[type="file"][multiple]').forEach((field) => {
     field.addEventListener('change', () => {
       const summary = document.querySelector('[data-batch-summary]');

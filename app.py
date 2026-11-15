@@ -16,6 +16,31 @@ app.config.update(SECRET_KEY=SECRET_KEY, MAX_CONTENT_LENGTH=MAX_CONTENT_LENGTH)
 Path(UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
 init_db()
 CATEGORIES = ["Tops", "Bottoms", "Outerwear", "Footwear", "Accessories"]
+APPAREL_CATEGORIES = {"Tops", "Bottoms", "Outerwear"}
+FIT_OPTIONS = ["Slim", "Regular", "Relaxed", "Oversized", "Structured", "Loose"]
+SHOE_STYLES = ["Chunky", "Derby", "Sneakers", "Loafers", "Boots", "Sandals", "Flats", "Heels", "Oxfords", "Other"]
+ACCESSORY_TYPES = ["Bag", "Belt", "Jewelry", "Hat", "Scarf", "Sunglasses", "Other"]
+
+
+def missing_analysis_details(garment):
+    """Return only category-relevant details that can improve outfit analysis."""
+    missing = []
+    if not garment.get("color"):
+        missing.append("color information")
+    if not garment.get("style_tags"):
+        missing.append("style tags")
+    if garment.get("category") in APPAREL_CATEGORIES:
+        if not garment.get("fit"):
+            missing.append("fit / silhouette")
+        try:
+            analysis = json.loads(garment.get("analysis_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            analysis = {}
+        if not analysis.get("silhouette_hint"):
+            missing.append("photo silhouette estimate")
+    elif garment.get("category") == "Footwear" and not garment.get("shoe_style"):
+        missing.append("shoe style")
+    return missing
 
 
 def get_garment(garment_id):
@@ -99,6 +124,7 @@ def dashboard():
             garment["analysis"] = json.loads(garment.get("analysis_json") or "{}")
         except (TypeError, json.JSONDecodeError):
             garment["analysis"] = {}
+        garment["missing_details"] = missing_analysis_details(garment)
     category_counts = rows("SELECT category, COUNT(*) AS count FROM garments GROUP BY category ORDER BY count DESC")
     outfits = row("SELECT COUNT(*) AS count FROM outfits")["count"]
     style = summarize([dict(g) for g in rows("SELECT style_tags FROM garments")])
@@ -115,7 +141,10 @@ def wardrobe():
     if category in CATEGORIES:
         query += " WHERE category = ?"; params = (category,)
     query += " ORDER BY created_at DESC"
-    return render_template("wardrobe.html", garments=rows(query, params), categories=CATEGORIES, selected=category)
+    garments = [dict(g) for g in rows(query, params)]
+    for garment in garments:
+        garment["missing_details"] = missing_analysis_details(garment)
+    return render_template("wardrobe.html", garments=garments, categories=CATEGORIES, selected=category)
 
 
 def garment_form(garment=None):
@@ -129,7 +158,9 @@ def garment_form(garment=None):
             garment["analysis"] = json.loads(garment["analysis_json"])
         except (TypeError, json.JSONDecodeError):
             garment["analysis"] = {}
-    return render_template("garment_form.html", garment=garment, categories=CATEGORIES)
+    return render_template("garment_form.html", garment=garment, categories=CATEGORIES,
+                           apparel_categories=APPAREL_CATEGORIES, fit_options=FIT_OPTIONS,
+                           shoe_styles=SHOE_STYLES, accessory_types=ACCESSORY_TYPES)
 
 
 @app.route("/garments/new", methods=["GET", "POST"])
@@ -141,17 +172,22 @@ def garment_new():
         category = request.form.get("category", "")
         if not name or len(name) > 100 or category not in CATEGORIES:
             raise ValueError("Add a name (up to 100 characters) and choose a category.")
+        fit = request.form.get("fit", "").strip() if category in APPAREL_CATEGORIES else ""
+        shoe_style = request.form.get("shoe_style", "").strip() if category == "Footwear" else ""
+        accessory_type = request.form.get("accessory_type", "").strip() if category == "Accessories" else ""
+        if fit and fit not in FIT_OPTIONS or shoe_style and shoe_style not in SHOE_STYLES or accessory_type and accessory_type not in ACCESSORY_TYPES:
+            raise ValueError("Choose a valid category-specific option.")
         path, analysis, cutout_path, _issue = save_image(request.files.get("image"), request.form.get("garment_box", ""))
         color = request.form.get("color", "").strip()[:50]
         if not color and analysis:
             color = analysis["palette"][0]
         with get_db() as db:
-            db.execute("""INSERT INTO garments(name,category,color,material,fit,style_tags,image_path,description,palette,brightness,saturation,cutout_path,analysis_json)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""", (name, category, color, request.form.get("material", "").strip()[:60],
-                request.form.get("fit", "").strip()[:40], request.form.get("style_tags", "").strip()[:250], path,
+            db.execute("""INSERT INTO garments(name,category,color,material,fit,style_tags,image_path,description,palette,brightness,saturation,cutout_path,analysis_json,shoe_style,accessory_type)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (name, category, color, request.form.get("material", "").strip()[:60],
+                fit, request.form.get("style_tags", "").strip()[:250], path,
                 request.form.get("description", "").strip()[:500], json.dumps(analysis["palette"]) if analysis else "",
                 analysis["brightness"] if analysis else None, analysis["saturation"] if analysis else None,
-                cutout_path, json.dumps(analysis) if analysis else "{}"))
+                cutout_path, json.dumps(analysis) if analysis else "{}", shoe_style, accessory_type))
         flash("Garment added to your wardrobe.", "success")
         return redirect(url_for("wardrobe"))
     except (ValueError, OSError) as exc:
@@ -208,17 +244,24 @@ def garment_edit(garment_id):
         name = request.form.get("name", "").strip(); category = request.form.get("category", "")
         if not name or len(name) > 100 or category not in CATEGORIES:
             raise ValueError("Add a name (up to 100 characters) and choose a category.")
+        fit = request.form.get("fit", "").strip() if category in APPAREL_CATEGORIES else ""
+        shoe_style = request.form.get("shoe_style", "").strip() if category == "Footwear" else ""
+        accessory_type = request.form.get("accessory_type", "").strip() if category == "Accessories" else ""
+        if fit and fit not in FIT_OPTIONS or shoe_style and shoe_style not in SHOE_STYLES or accessory_type and accessory_type not in ACCESSORY_TYPES:
+            raise ValueError("Choose a valid category-specific option.")
         path, analysis, cutout_path, _issue = save_image(request.files.get("image"), request.form.get("garment_box", ""))
         color = request.form.get("color", "").strip()[:50] or (analysis["palette"][0] if analysis else garment["color"])
         with get_db() as db:
             db.execute("""UPDATE garments SET name=?,category=?,color=?,material=?,fit=?,style_tags=?,image_path=?,description=?,
                 palette=CASE WHEN ? != '' THEN ? ELSE palette END, brightness=COALESCE(?,brightness), saturation=COALESCE(?,saturation),
-                cutout_path=CASE WHEN ? != '' THEN ? ELSE cutout_path END, analysis_json=CASE WHEN ? != '{}' THEN ? ELSE analysis_json END WHERE id=?""",
-                (name, category, color, request.form.get("material", "").strip()[:60], request.form.get("fit", "").strip()[:40],
+                cutout_path=CASE WHEN ? != '' THEN ? ELSE cutout_path END, analysis_json=CASE WHEN ? != '{}' THEN ? ELSE analysis_json END,
+                shoe_style=?,accessory_type=? WHERE id=?""",
+                (name, category, color, request.form.get("material", "").strip()[:60], fit,
                  request.form.get("style_tags", "").strip()[:250], path or garment["image_path"], request.form.get("description", "").strip()[:500],
                  json.dumps(analysis["palette"]) if analysis else "", json.dumps(analysis["palette"]) if analysis else "",
                  analysis["brightness"] if analysis else None, analysis["saturation"] if analysis else None,
-                 cutout_path, cutout_path, json.dumps(analysis) if analysis else "{}", json.dumps(analysis) if analysis else "{}", garment_id))
+                 cutout_path, cutout_path, json.dumps(analysis) if analysis else "{}", json.dumps(analysis) if analysis else "{}",
+                 shoe_style, accessory_type, garment_id))
         flash("Garment updated.", "success"); return redirect(url_for("wardrobe"))
     except (ValueError, OSError) as exc:
         flash(str(exc), "error"); return garment_form(garment)

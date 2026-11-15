@@ -75,6 +75,25 @@ class AppRouteTests(unittest.TestCase):
         self.assertTrue(garment["cutout_path"])
         self.assertTrue(garment["palette"])
 
+    def test_category_specific_options_save_only_for_relevant_types(self):
+        footwear = self.client.post("/garments/new", data={"name": "Chunky shoes", "category": "Footwear", "shoe_style": "Chunky", "fit": "Oversized"})
+        self.assertEqual(footwear.status_code, 302)
+        shoe = database.row("SELECT * FROM garments WHERE name='Chunky shoes'")
+        self.assertEqual(shoe["shoe_style"], "Chunky")
+        self.assertEqual(shoe["fit"], "")
+        incomplete_shoe = dict(shoe)
+        incomplete_shoe["shoe_style"] = ""
+        self.assertIn("shoe style", seam_app.missing_analysis_details(incomplete_shoe))
+
+        accessory = self.client.post("/garments/new", data={"name": "Canvas bag", "category": "Accessories", "fit": "Slim"})
+        self.assertEqual(accessory.status_code, 302)
+        bag = database.row("SELECT * FROM garments WHERE name='Canvas bag'")
+        self.assertEqual(bag["accessory_type"], "")
+        self.assertEqual(bag["fit"], "")
+        accessory_missing = seam_app.missing_analysis_details(dict(bag))
+        self.assertNotIn("fit / silhouette", accessory_missing)
+        self.assertNotIn("accessory type", accessory_missing)
+
     def test_quick_rename_and_bulk_delete(self):
         for name in ("Garment 1", "Garment 2", "Garment 3"):
             self.client.post("/garments/new", data={"name": name, "category": "Bottoms"})

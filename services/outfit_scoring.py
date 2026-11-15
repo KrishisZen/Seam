@@ -7,6 +7,25 @@ from config import SCORING_WEIGHTS
 
 WEIGHTS = SCORING_WEIGHTS
 CORE = {"Tops", "Bottoms", "Footwear"}
+SHOE_STYLE_AFFINITY = {
+    "chunky": {"streetwear", "grunge", "utility", "casual", "athleisure", "avant-garde"},
+    "derby": {"formal", "workwear", "minimal", "vintage", "preppy", "smart casual", "business casual"},
+    "sneakers": {"streetwear", "casual", "utility", "athleisure", "minimal", "workwear"},
+    "loafers": {"preppy", "formal", "minimal", "workwear", "vintage", "smart casual"},
+    "boots": {"workwear", "grunge", "utility", "vintage", "streetwear", "casual"},
+    "sandals": {"casual", "vacation", "bohemian", "minimal", "resort"},
+    "flats": {"minimal", "formal", "casual", "vintage", "preppy"},
+    "heels": {"formal", "evening", "elegant", "minimal", "dressy"},
+    "oxfords": {"formal", "workwear", "vintage", "preppy", "business casual"},
+}
+SHOE_STYLE_MISMATCH = {
+    "chunky": {"formal", "evening", "business"},
+    "derby": {"athleisure", "beachwear", "resort"},
+    "sneakers": {"formal", "evening"},
+    "loafers": {"athleisure", "grunge"},
+    "sandals": {"business", "formal"},
+    "oxfords": {"athleisure", "beachwear"},
+}
 
 
 def _hex(value):
@@ -15,6 +34,26 @@ def _hex(value):
         return ImageColor.getrgb("#" + value if len(value) == 6 else value)[:3]
     except (ValueError, TypeError):
         return None
+
+
+def _shoe_pairing_score(garments, tags):
+    """Score shoe-style alignment with non-footwear style tags (heuristic)."""
+    shoes = [g for g in garments if g.get("category") == "Footwear" and (g.get("shoe_style") or "").strip()]
+    if not shoes:
+        return None
+    outfit_tags = set().union(*(tag_set for garment, tag_set in zip(garments, tags)
+                                if garment.get("category") != "Footwear"))
+    if not outfit_tags:
+        return 62.0
+    scores = []
+    for shoe in shoes:
+        style = shoe["shoe_style"].strip().lower()
+        if outfit_tags & SHOE_STYLE_MISMATCH.get(style, set()):
+            scores.append(38.0)
+            continue
+        overlap = outfit_tags & SHOE_STYLE_AFFINITY.get(style, set())
+        scores.append(min(96.0, 78.0 + 6.0 * len(overlap)) if overlap else 62.0)
+    return sum(scores) / len(scores)
 
 
 def score_outfit(garments, weights=None):
@@ -48,6 +87,10 @@ def score_outfit(garments, weights=None):
         style_score = 58.0 if nonempty else 50.0
     else:
         style_score = 100 * sum(len(a & b) / len(a | b) if a | b else 0 for a, b in combinations(nonempty, 2)) / len(list(combinations(nonempty, 2)))
+    footwear_score = _shoe_pairing_score(garments, tags)
+    if footwear_score is not None:
+        # Footwear rules have lower influence than the user's own garment tags.
+        style_score = .75 * style_score + .25 * footwear_score
     fits = [g.get("fit", "").strip().lower() for g in garments if g.get("fit", "").strip()]
     silhouette_score = 72.0 if len(fits) < 2 else max(45.0, 100 - 14 * (len(set(fits)) - 1))
     cats = {g.get("category") for g in garments}

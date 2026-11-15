@@ -36,6 +36,7 @@ def init_db():
             image_path TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
             palette TEXT NOT NULL DEFAULT '', brightness REAL, saturation REAL,
             cutout_path TEXT NOT NULL DEFAULT '', analysis_json TEXT NOT NULL DEFAULT '{}',
+            shoe_style TEXT NOT NULL DEFAULT '', accessory_type TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS outfits (
@@ -65,6 +66,10 @@ def init_db():
             db.execute("ALTER TABLE garments ADD COLUMN cutout_path TEXT NOT NULL DEFAULT ''")
         if "analysis_json" not in garment_columns:
             db.execute("ALTER TABLE garments ADD COLUMN analysis_json TEXT NOT NULL DEFAULT '{}'")
+        if "shoe_style" not in garment_columns:
+            db.execute("ALTER TABLE garments ADD COLUMN shoe_style TEXT NOT NULL DEFAULT ''")
+        if "accessory_type" not in garment_columns:
+            db.execute("ALTER TABLE garments ADD COLUMN accessory_type TEXT NOT NULL DEFAULT ''")
 
 
 def rows(query, params=()):
