@@ -8,3 +8,4 @@
 .bulk-selection-bar [hidden]{display:none!important}
 .name-display[hidden]{display:none}
 .button.danger.subtle{background:#fff8f7;border-color:#e4c3bf;color:#923d35}.button.danger.subtle:hover{border-color:#c99089;background:#f8e9e7}
+.mini-item{display:flex;flex-direction:column;position:relative;overflow:hidden;background:#fff;border:1px solid var(--line);align-self:stretch}.mini-photo{position:relative;display:block;flex:none;height:148px;margin:0;padding:0;overflow:hidden}.mini-photo img{position:static;display:block;width:100%;height:100%;object-fit:cover}.mini-caption{position:relative;z-index:1;display:flex;flex-direction:column;gap:4px;min-height:78px;padding:10px;background:#fff;overflow:hidden}.mini-caption small{margin:0}.mini-caption b{display:block;position:static}.mini-caption>span{position:static;display:block}.mini-caption .mini-silhouette{color:#777a62}@media(max-width:760px){.mini-photo{height:122px}.mini-caption{min-height:75px}}

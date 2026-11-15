@@ -55,7 +55,14 @@ class AppRouteTests(unittest.TestCase):
         self.assertTrue(garments[0]["palette"] and garments[2]["palette"])
         self.assertFalse(garments[1]["cutout_path"])
         self.assertFalse(garments[1]["palette"])
-        self.assertEqual(self.client.get("/garments/1/edit").status_code, 200)
+        wardrobe_html = self.client.get("/wardrobe").get_data(as_text=True)
+        overview_html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("/static/" + garments[0]["image_path"], wardrobe_html)
+        self.assertNotIn("/static/" + garments[0]["cutout_path"], wardrobe_html)
+        self.assertIn("/static/" + garments[0]["image_path"], overview_html)
+        self.assertNotIn("/static/" + garments[0]["cutout_path"], overview_html)
+        analysis_html = self.client.get("/garments/1/edit").get_data(as_text=True)
+        self.assertIn("/static/" + garments[0]["cutout_path"], analysis_html)
 
     def test_single_upload_accepts_user_drawn_selection_box(self):
         response = self.client.post("/garments/new", data={
