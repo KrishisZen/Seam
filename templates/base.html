@@ -11,7 +11,7 @@
   <aside class="sidebar"><a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark">S</span><span>SEAM<small>WARDROBE INTELLIGENCE</small></span></a>
     <div class="nav-label">WORKSPACE</div><nav>
       <a class="{{ 'active' if request.endpoint == 'dashboard' else '' }}" href="{{ url_for('dashboard') }}"><span>◫</span> Overview</a>
-      <a class="{{ 'active' if request.endpoint in ('wardrobe','garment_new','garment_edit') else '' }}" href="{{ url_for('wardrobe') }}"><span>▤</span> My wardrobe</a>
+      <a class="{{ 'active' if request.endpoint in ('wardrobe','garment_new','garment_edit','garment_bulk') else '' }}" href="{{ url_for('wardrobe') }}"><span>▤</span> My wardrobe</a>
       <a class="{{ 'active' if request.endpoint in ('outfits','outfit_detail') else '' }}" href="{{ url_for('outfits') }}"><span>◈</span> Outfit studio</a>
       <a class="{{ 'active' if request.endpoint == 'recommendations' else '' }}" href="{{ url_for('recommendations') }}"><span>✳</span> Recommendations</a>
       <a class="{{ 'active' if request.endpoint == 'style_profile' else '' }}" href="{{ url_for('style_profile') }}"><span>◉</span> Style profile</a>
@@ -20,5 +20,8 @@
   <main class="main"><header class="topbar"><span class="breadcrumb">SEAM <b>/</b> {% block crumb %}Overview{% endblock %}</span><span class="local-badge">PERSONAL WARDROBE</span></header>
     <div class="content">{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}<div class="alerts">{% for category,message in messages %}<div class="alert {{ category }}">{{ message }}<button type="button" onclick="this.parentElement.remove()">×</button></div>{% endfor %}</div>{% endif %}{% endwith %}
     {% block content %}{% endblock %}<footer>SEAM <span>·</span> A computational companion for your wardrobe</footer></div>
-  </main><script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  </main>
+  <div class="validation-toast" data-validation-toast role="status" aria-live="polite" hidden><span data-validation-message></span><button type="button" aria-label="Dismiss message" data-dismiss-validation>&times;</button></div>
+  <dialog class="site-dialog" data-delete-dialog><form method="dialog" class="dialog-card"><span class="dialog-icon">&#10005;</span><div class="eyebrow">CONFIRM DELETE</div><h2>Remove this item?</h2><p data-delete-message>This action cannot be undone.</p><div class="dialog-actions"><button type="button" class="button outline" data-delete-cancel>Cancel</button><button type="button" class="button danger" data-delete-confirm>Delete</button></div></form></dialog>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body></html>

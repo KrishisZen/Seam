@@ -35,6 +35,7 @@ def init_db():
             fit TEXT NOT NULL DEFAULT '', style_tags TEXT NOT NULL DEFAULT '',
             image_path TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
             palette TEXT NOT NULL DEFAULT '', brightness REAL, saturation REAL,
+            cutout_path TEXT NOT NULL DEFAULT '', analysis_json TEXT NOT NULL DEFAULT '{}',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS outfits (
@@ -58,6 +59,12 @@ def init_db():
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         """)
+        # Keep existing local databases compatible with newer image analysis.
+        garment_columns = {column[1] for column in db.execute("PRAGMA table_info(garments)")}
+        if "cutout_path" not in garment_columns:
+            db.execute("ALTER TABLE garments ADD COLUMN cutout_path TEXT NOT NULL DEFAULT ''")
+        if "analysis_json" not in garment_columns:
+            db.execute("ALTER TABLE garments ADD COLUMN analysis_json TEXT NOT NULL DEFAULT '{}'")
 
 
 def rows(query, params=()):
