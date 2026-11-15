@@ -3,7 +3,7 @@ from collections import Counter
 from itertools import combinations
 import colorsys
 from PIL import ImageColor
-from config import SCORING_WEIGHTS
+from config import OVERALL_SCORE_CURVE, SCORING_WEIGHTS
 from services.style_profile import parse_style_tags
 
 WEIGHTS = SCORING_WEIGHTS
@@ -101,7 +101,9 @@ def score_outfit(garments, weights=None):
     scores = {"color": color_score, "style": style_score, "silhouette": silhouette_score,
               "completeness": completeness_score, "balance": balance_score}
     scores = {key: round(max(0, min(100, value)), 1) for key, value in scores.items()}
-    scores["overall"] = round(sum(scores[k] * weights[k] for k in weights), 1)
+    weighted_score = sum(scores[k] * weights[k] for k in weights)
+    # Compress the top end so a heuristic estimate does not imply easy certainty.
+    scores["overall"] = round(100 * (weighted_score / 100) ** OVERALL_SCORE_CURVE, 1)
     return scores
 
 

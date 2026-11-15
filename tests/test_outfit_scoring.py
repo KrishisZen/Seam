@@ -1,4 +1,5 @@
 import unittest
+from config import OVERALL_SCORE_CURVE
 from services.outfit_scoring import score_outfit
 
 
@@ -15,7 +16,10 @@ class OutfitScoringTests(unittest.TestCase):
         score = score_outfit(garments)
         self.assertEqual(set(score), {"color", "style", "silhouette", "completeness", "balance", "overall"})
         self.assertTrue(all(0 <= value <= 100 for value in score.values()))
-        self.assertEqual(score["overall"], round(.30 * score["color"] + .25 * score["style"] + .20 * score["silhouette"] + .15 * score["completeness"] + .10 * score["balance"], 1))
+        weighted = (.30 * score["color"] + .25 * score["style"] + .20 * score["silhouette"]
+                    + .15 * score["completeness"] + .10 * score["balance"])
+        self.assertEqual(score["overall"], round(100 * (weighted / 100) ** OVERALL_SCORE_CURVE, 1))
+        self.assertLessEqual(score["overall"], weighted)
 
     def test_shoe_style_pairing_uses_outfit_style_tags(self):
         base = [

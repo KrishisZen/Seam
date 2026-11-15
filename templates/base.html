@@ -15,7 +15,7 @@
       <a class="{{ 'active' if request.endpoint in ('outfits','outfit_detail') else '' }}" href="{{ url_for('outfits') }}"><span>◈</span> Outfit studio</a>
       <a class="{{ 'active' if request.endpoint == 'recommendations' else '' }}" href="{{ url_for('recommendations') }}"><span>✳</span> Recommendations</a>
       <a class="{{ 'active' if request.endpoint == 'style_profile' else '' }}" href="{{ url_for('style_profile') }}"><span>◉</span> Style profile</a>
-    </nav><div class="sidebar-note"><span class="status-dot"></span> YOUR CLOSET, IN CONTEXT<p>Small decisions. Better combinations.</p></div>
+    </nav>
   </aside>
   <main class="main"><header class="topbar"><span class="breadcrumb">SEAM <b>/</b> {% block crumb %}Overview{% endblock %}</span><span class="local-badge">PERSONAL WARDROBE</span></header>
     <div class="content">{% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}<div class="alerts">{% for category,message in messages %}<div class="alert {{ category }}">{{ message }}<button type="button" onclick="this.parentElement.remove()">×</button></div>{% endfor %}</div>{% endif %}{% endwith %}

@@ -9,6 +9,7 @@ from werkzeug.utils import secure_filename
 from config import ALLOWED_EXTENSIONS, MAX_CONTENT_LENGTH, SECRET_KEY, STYLE_TAGS, STYLE_TAG_GROUPS, UPLOAD_FOLDER
 from database import get_db, init_db, row, rows
 from services.color_analysis import analyze_image
+from services.color_names import color_name
 from services.outfit_recommendation import recommend
 from services.outfit_scoring import improvement_suggestions, score_outfit
 from services.style_profile import parse_style_tags, summarize
@@ -34,6 +35,8 @@ def missing_analysis_details(garment):
         missing.append("shoe style")
     if not garment.get("color"):
         missing.append("color information")
+    if not parse_style_tags(garment.get("style_tags") or ""):
+        missing.append("style tags")
     return missing
 
 
@@ -148,6 +151,8 @@ def dashboard():
     outfits = row("SELECT COUNT(*) AS count FROM outfits")["count"]
     style = summarize([dict(g) for g in rows("SELECT style_tags FROM garments")])
     color_counts = rows("SELECT color, COUNT(*) AS count FROM garments WHERE color != '' GROUP BY color ORDER BY count DESC LIMIT 6")
+    color_counts = [{"color": item["color"], "count": item["count"], "name": color_name(item["color"])}
+                    for item in color_counts]
     return render_template("dashboard.html", garments=garments, garment_count=row("SELECT COUNT(*) AS count FROM garments")["count"],
                            outfit_count=outfits, category_counts=category_counts, style=style[:4], color_counts=color_counts)
 
@@ -155,15 +160,19 @@ def dashboard():
 @app.route("/wardrobe")
 def wardrobe():
     category = request.args.get("category", "")
+    sort_order = request.args.get("sort", "alpha")
+    if sort_order not in {"alpha", "latest"}:
+        sort_order = "alpha"
     query = "SELECT * FROM garments"
     params = ()
     if category in CATEGORIES:
         query += " WHERE category = ?"; params = (category,)
-    query += " ORDER BY created_at DESC"
+    query += " ORDER BY " + ("created_at DESC, id DESC" if sort_order == "latest" else "name COLLATE NOCASE ASC, id ASC")
     garments = [dict(g) for g in rows(query, params)]
     for garment in garments:
         garment["missing_details"] = missing_analysis_details(garment)
-    return render_template("wardrobe.html", garments=garments, categories=CATEGORIES, selected=category)
+    return render_template("wardrobe.html", garments=garments, categories=CATEGORIES, selected=category,
+                           sort_order=sort_order)
 
 
 def garment_form(garment=None, selected_style_tags=None):

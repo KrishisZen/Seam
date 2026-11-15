@@ -94,7 +94,7 @@ class AppRouteTests(unittest.TestCase):
         accessory_missing = seam_app.missing_analysis_details(dict(bag))
         self.assertNotIn("fit / silhouette", accessory_missing)
         self.assertNotIn("accessory type", accessory_missing)
-        self.assertNotIn("style tags", accessory_missing)
+        self.assertIn("style tags", accessory_missing)
 
     def test_style_tags_are_curated_and_limited_to_five_without_a_minimum(self):
         self.assertGreaterEqual(len(STYLE_TAGS), 20)
@@ -123,18 +123,34 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(wardrobe_response.status_code, 200)
         wardrobe_html = wardrobe_response.get_data(as_text=True)
         self.assertIn('role="tooltip"', wardrobe_html)
-        self.assertNotIn("Style tags", wardrobe_html)
+        self.assertIn("Style tags <em>optional</em>", wardrobe_html)
         self.assertIn("<b>Silhouette</b>", wardrobe_html)
         response = self.client.post("/garments/1/rename", data={"name": "Black jeans", "category": "Bottoms"})
         self.assertEqual(response.status_code, 302)
         self.assertEqual(database.row("SELECT name FROM garments WHERE id=1")["name"], "Black jeans")
         response = self.client.post("/garments/1/edit", data={"name": "Black jeans", "category": "Bottoms", "fit": "Regular", "color": "#222222"})
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(seam_app.missing_analysis_details(dict(database.row("SELECT * FROM garments WHERE id=1"))), [])
+        self.assertEqual(seam_app.missing_analysis_details(dict(database.row("SELECT * FROM garments WHERE id=1"))), ["style tags"])
         response = self.client.post("/garments/bulk-delete", data={"garment_ids": ["1", "2"]})
         self.assertEqual(response.status_code, 302)
         remaining = database.rows("SELECT name FROM garments ORDER BY id")
         self.assertEqual([item["name"] for item in remaining], ["Garment 3"])
+
+    def test_wardrobe_sort_can_be_alphabetical_or_latest(self):
+        for name in ("Zulu coat", "Alpha tee", "Middle jeans"):
+            self.client.post("/garments/new", data={"name": name, "category": "Tops"})
+        alphabetic = self.client.get("/wardrobe").get_data(as_text=True)
+        self.assertLess(alphabetic.index("Alpha tee"), alphabetic.index("Middle jeans"))
+        self.assertLess(alphabetic.index("Middle jeans"), alphabetic.index("Zulu coat"))
+        self.assertIn('value="alpha" selected', alphabetic)
+        latest = self.client.get("/wardrobe?sort=latest").get_data(as_text=True)
+        self.assertLess(latest.index("Middle jeans"), latest.index("Alpha tee"))
+        self.assertIn('value="latest" selected', latest)
+
+    def test_dashboard_color_notes_use_readable_names(self):
+        self.client.post("/garments/new", data={"name": "Teal shirt", "category": "Tops", "color": "#008080"})
+        dashboard = self.client.get("/").get_data(as_text=True)
+        self.assertIn(">Teal <b>1</b></span>", dashboard)
 
     def test_garment_outfit_recommendation_and_edit_pages(self):
         self.assertEqual(self.client.get("/garments/bulk").status_code, 200)
@@ -167,7 +183,9 @@ class AppRouteTests(unittest.TestCase):
         edit_html = self.client.get("/outfits/1/edit").get_data(as_text=True)
         self.assertEqual(self.client.get("/outfits/1/edit").status_code, 200)
         self.assertIn("Remove current fit pic", edit_html)
-        self.assertEqual(self.client.get("/recommendations").status_code, 200)
+        recommendations_html = self.client.get("/recommendations").get_data(as_text=True)
+        self.assertIn('class="rec-copy"', recommendations_html)
+        self.assertLess(recommendations_html.index('class="rec-photo"'), recommendations_html.index('class="rec-copy"'))
         self.assertEqual(self.client.get("/style-profile").status_code, 200)
         response = self.client.post("/outfits/1/edit", data={"name": "Weekend revised", "garment_ids": ["1", "2", "3"]})
         self.assertEqual(response.status_code, 302)

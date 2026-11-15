@@ -14,6 +14,7 @@ SCORING_WEIGHTS = {
     "completeness": 0.15,
     "balance": 0.10,
 }
+OVERALL_SCORE_CURVE = 1.5
 
 STYLE_TAG_GROUPS = {
     "Everyday": ["Casual", "Classic", "Minimal", "Smart Casual", "Normcore", "Coastal"],
