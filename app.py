@@ -2,6 +2,7 @@
 from pathlib import Path
 from io import BytesIO
 import json
+import math
 import uuid
 from flask import Flask, abort, flash, redirect, render_template, request, url_for
 from PIL import Image
@@ -483,7 +484,39 @@ def outfit_delete(outfit_id):
 @app.route("/recommendations")
 def recommendations():
     garments = [dict(g) for g in rows("SELECT * FROM garments")]
-    return render_template("recommendations.html", recommendations=recommend(garments), garment_count=len(garments))
+    all_recommendations = recommend(garments, limit=None)
+    page_size = 5
+    page_count = max(1, math.ceil(len(all_recommendations) / page_size))
+    page = (request.args.get("page", 0, type=int) or 0) % page_count
+    start = page * page_size
+    return render_template("recommendations.html", recommendations=all_recommendations[start:start + page_size],
+                           garment_count=len(garments), page=page, page_count=page_count,
+                           next_page=(page + 1) % page_count)
+
+
+@app.post("/recommendations/save")
+def recommendation_save():
+    ids = list(dict.fromkeys(request.form.getlist("garment_ids", type=int)))
+    if not ids:
+        abort(400)
+    selected = rows(f"SELECT * FROM garments WHERE id IN ({','.join('?' for _ in ids)})", ids)
+    categories = {g["category"] for g in selected}
+    if len(selected) != len(ids) or not {"Tops", "Bottoms", "Footwear"}.issubset(categories):
+        abort(400)
+    scores = score_outfit([dict(g) for g in selected])
+    name_number = row("SELECT COALESCE(MAX(id),0) + 1 AS next_number FROM outfits")["next_number"]
+    name = f"Recommended look {name_number}"
+    with get_db() as db:
+        cursor = db.execute("INSERT INTO outfits(name,description) VALUES(?,?)",
+                            (name, "Saved from outfit recommendations."))
+        outfit_id = cursor.lastrowid
+        db.executemany("INSERT INTO outfit_garments(outfit_id,garment_id) VALUES(?,?)",
+                       [(outfit_id, g["id"]) for g in selected])
+        db.execute("INSERT INTO outfit_scores(outfit_id,color_score,style_score,silhouette_score,completeness_score,balance_score,overall_score) VALUES(?,?,?,?,?,?,?)",
+                   (outfit_id, scores["color"], scores["style"], scores["silhouette"],
+                    scores["completeness"], scores["balance"], scores["overall"]))
+    flash(f"{name} was added to Outfit Studio.", "success")
+    return redirect(url_for("outfits"))
 
 
 @app.route("/style-profile")

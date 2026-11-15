@@ -1,5 +1,6 @@
 import unittest
 import io
+import re
 from pathlib import Path
 from PIL import Image, ImageDraw
 
@@ -203,6 +204,30 @@ class AppRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(database.row("SELECT fit_pic_path FROM outfits WHERE id=1")["fit_pic_path"], "")
         self.assertEqual(self.client.get("/").status_code, 200)
+
+    def test_recommendations_refresh_and_save_as_outfit(self):
+        for category in ("Tops", "Bottoms", "Footwear"):
+            for index in range(3):
+                self.client.post("/garments/new", data={"name": f"{category} {index + 1}", "category": category,
+                                                         "color": "#345678", "style_tags": "Minimal", "fit": "Regular"})
+        page_zero = self.client.get("/recommendations").get_data(as_text=True)
+        page_one = self.client.get("/recommendations?page=1").get_data(as_text=True)
+        self.assertIn("Refresh recommendations", page_zero)
+        self.assertIn("Make this an outfit", page_zero)
+        first_card_zero = re.search(r'<article class="panel recommendation">(.*?)</article>', page_zero).group(1)
+        first_card_one = re.search(r'<article class="panel recommendation">(.*?)</article>', page_one).group(1)
+        first_ids_zero = re.findall(r'name="garment_ids" value="(\d+)"', first_card_zero)
+        first_ids_one = re.findall(r'name="garment_ids" value="(\d+)"', first_card_one)
+        self.assertNotEqual(set(first_ids_zero), set(first_ids_one))
+
+        response = self.client.post("/recommendations/save", data={"garment_ids": ["1", "4", "7"]})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.location, "/outfits")
+        saved = database.row("SELECT * FROM outfits WHERE id=1")
+        self.assertEqual(saved["name"], "Recommended look 1")
+        detail = self.client.get("/outfits/1").get_data(as_text=True)
+        self.assertIn("No fit pic, boohoo.", detail)
+        self.assertIn('class="panel outfit-fit-pic"', detail)
 
 
 if __name__ == "__main__":
