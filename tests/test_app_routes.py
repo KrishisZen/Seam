@@ -96,11 +96,19 @@ class AppRouteTests(unittest.TestCase):
 
     def test_quick_rename_and_bulk_delete(self):
         for name in ("Garment 1", "Garment 2", "Garment 3"):
-            self.client.post("/garments/new", data={"name": name, "category": "Bottoms"})
-        self.assertEqual(self.client.get("/wardrobe").status_code, 200)
+            self.client.post("/garments/new", data={"name": name, "category": "Bottoms", "color": "#222222"})
+        wardrobe_response = self.client.get("/wardrobe")
+        self.assertEqual(wardrobe_response.status_code, 200)
+        wardrobe_html = wardrobe_response.get_data(as_text=True)
+        self.assertIn('role="tooltip"', wardrobe_html)
+        self.assertIn("Style tags <em>optional</em>", wardrobe_html)
+        self.assertLess(wardrobe_html.index("<b>Silhouette</b>"), wardrobe_html.index("<b>Style tags"))
         response = self.client.post("/garments/1/rename", data={"name": "Black jeans", "category": "Bottoms"})
         self.assertEqual(response.status_code, 302)
         self.assertEqual(database.row("SELECT name FROM garments WHERE id=1")["name"], "Black jeans")
+        response = self.client.post("/garments/1/edit", data={"name": "Black jeans", "category": "Bottoms", "fit": "Regular", "color": "#222222"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(seam_app.missing_analysis_details(dict(database.row("SELECT * FROM garments WHERE id=1"))), ["style tags"])
         response = self.client.post("/garments/bulk-delete", data={"garment_ids": ["1", "2"]})
         self.assertEqual(response.status_code, 302)
         remaining = database.rows("SELECT name FROM garments ORDER BY id")

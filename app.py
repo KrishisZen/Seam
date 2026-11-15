@@ -25,21 +25,15 @@ ACCESSORY_TYPES = ["Bag", "Belt", "Jewelry", "Hat", "Scarf", "Sunglasses", "Othe
 def missing_analysis_details(garment):
     """Return only category-relevant details that can improve outfit analysis."""
     missing = []
+    if garment.get("category") in APPAREL_CATEGORIES:
+        if not garment.get("fit"):
+            missing.append("silhouette")
+    elif garment.get("category") == "Footwear" and not garment.get("shoe_style"):
+        missing.append("shoe style")
     if not garment.get("color"):
         missing.append("color information")
     if not garment.get("style_tags"):
         missing.append("style tags")
-    if garment.get("category") in APPAREL_CATEGORIES:
-        if not garment.get("fit"):
-            missing.append("fit / silhouette")
-        try:
-            analysis = json.loads(garment.get("analysis_json") or "{}")
-        except (TypeError, json.JSONDecodeError):
-            analysis = {}
-        if not analysis.get("silhouette_hint"):
-            missing.append("photo silhouette estimate")
-    elif garment.get("category") == "Footwear" and not garment.get("shoe_style"):
-        missing.append("shoe style")
     return missing
 
 

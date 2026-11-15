@@ -156,6 +156,30 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => { toast.hidden = true; }, 250);
   });
 
+  const tooltipButtons = Array.from(document.querySelectorAll('[data-tooltip-trigger]'));
+  const closeTooltips = (except = null) => {
+    tooltipButtons.forEach((button) => {
+      if (button !== except) button.setAttribute('aria-expanded', 'false');
+    });
+  };
+  tooltipButtons.forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const shouldOpen = button.getAttribute('aria-expanded') !== 'true';
+      closeTooltips(button);
+      button.setAttribute('aria-expanded', String(shouldOpen));
+    });
+  });
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('[data-tooltip-trigger]')) closeTooltips();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeTooltips();
+      if (document.activeElement.matches('[data-tooltip-trigger]')) document.activeElement.blur();
+    }
+  });
+
   document.querySelectorAll('[data-inline-validate]').forEach((form) => {
     form.addEventListener('submit', (event) => {
       const missing = [];
